@@ -1,4 +1,4 @@
-// notion.js v6
+[24.05.2026 0:13] Денис: // notion.js v6.1 — з пагінацією
 
 const DB = {
   shifts:       import.meta.env.VITE_DB_SHIFTS,
@@ -22,13 +22,37 @@ async function nr(path, method = 'POST', body = null) {
   return r.json()
 }
 
-export const queryDB     = (id, filter, sorts) => nr(`/databases/${id}/query`, 'POST', { ...(filter?{filter}:{}), ...(sorts?{sorts}:{}), page_size: 100 })
-export const createPage  = (id, props)         => nr('/pages', 'POST', { parent: { database_id: id }, properties: props })
-export const updatePage  = (id, props)         => nr(`/pages/${id}`, 'PATCH', { properties: props })
-export const archivePage = (id)                => nr(`/pages/${id}`, 'PATCH', { archived: true })
+// ── ПАГІНАЦІЯ — отримуємо ВСІ записи без обмежень ─────────
+export async function queryDB(id, filter, sorts) {
+  const allResults = []
+  let cursor = undefined
+
+  while (true) {
+    const body = {
+      page_size: 100,
+      ...(filter ? { filter } : {}),
+      ...(sorts  ? { sorts  } : {}),
+      ...(cursor ? { start_cursor: cursor } : {}),
+    }
+    const data = await nr(`/databases/${id}/query`, 'POST', body)
+    allResults.push(...(data.results || []))
+
+    if (data.has_more && data.next_cursor) {
+      cursor = data.next_cursor
+    } else {
+      break
+    }
+  }
+
+  return { results: allResults }
+}
+
+export const createPage  = (id, props) => nr('/pages', 'POST', { parent: { database_id: id }, properties: props })
+export const updatePage  = (id, props) => nr(`/pages/${id}`, 'PATCH', { properties: props })
+export const archivePage = (id)        => nr(`/pages/${id}`, 'PATCH', { archived: true })
 
 const p = {
-  text: v => v?.rich_text?.[0]?.plain_text || v?.title?.[0]?.plain_text || '',
+  text: v => v?.rich_text?.[0]?.plain_text  v?.title?.[0]?.plain_text  '',
   num:  v => v?.number ?? 0,
   date: v => v?.date?.start || '',
 }
@@ -37,7 +61,7 @@ export function monthRange(year, month) {
   const y = year  ?? new Date().getFullYear()
   const m = month ?? new Date().getMonth()
   return {
-    start: `${y}-${String(m+1).padStart(2,'0')}-01`,
+    start: ${y}-${String(m+1).padStart(2,'0')}-01,
     end:   new Date(y, m+1, 0).toISOString().slice(0,10),
   }
 }
@@ -53,7 +77,7 @@ function dateFilter(field, year, month) {
 export const DEFAULT_CFG = {
   minDaysForBonus: 19, bonusPerLongDay: 100, bonusSaturday: 300,
   premiumDays: 21, premiumAmount: 4000, longDayHours: 10, longDaysNeeded: 10,
-  lunchBreak: 1, // година обіду
+  lunchBreak: 1,
 }
 
 export async function fetchSettings() {
@@ -86,11 +110,10 @@ export async function saveSettings(pageId, cfg) {
     'Потрібно довгих днів':  { number: cfg.longDaysNeeded },
     'Обід (год)':            { number: cfg.lunchBreak },
   }
-  if (pageId) return updatePage(pageId, props)
+[24.05.2026 0:13] Денис: if (pageId) return updatePage(pageId, props)
   return createPage(DB.settings, { 'Назва':{ title:[{ text:{ content:'Налаштування' } }] }, ...props })
 }
 
-// Завантажити дані за місяць
 export async function fetchAllData(year, month) {
   const df = f => dateFilter(f, year, month)
   const [shifts, staff, advances, bonuses, fixedStaff, debts, debtPayments, settings] =
@@ -116,13 +139,11 @@ export async function fetchAllData(year, month) {
   }
 }
 
-// Завантажити всі виплати боргу (всі місяці)
 export async function fetchAllDebtPayments(tgId) {
   const r = await queryDB(DB.debtPayments, { property:'ID', number:{ equals:tgId } })
   return r.results.map(parseDP).sort((a,b)=>b.date.localeCompare(a.date))
 }
 
-// Завантажити статистику по місяцях (для графіку)
 export async function fetchMonthlyStats(tgId, monthsCount = 6) {
   const now = new Date()
   const results = []
@@ -130,13 +151,11 @@ export async function fetchMonthlyStats(tgId, monthsCount = 6) {
     const d = new Date(now.getFullYear(), now.getMonth()-i)
     const y = d.getFullYear(), m = d.getMonth()
     const { start, end } = monthRange(y, m)
-    const filter = {
-      and: [
-        { property:'ID', number:{ equals:tgId } },
-        { property:'Дата', date:{ on_or_after:start } },
-        { property:'Дата', date:{ on_or_before:end } },
-      ]
-    }
+    const filter = { and: [
+      { property:'ID', number:{ equals:tgId } },
+      { property:'Дата', date:{ on_or_after:start } },
+      { property:'Дата', date:{ on_or_before:end } },
+    ]}
     const r = await queryDB(DB.shifts, filter)
     const shifts = r.results.map(parseShift)
     const totalHours = shifts.reduce((s,sh)=>s+sh.hours,0)
@@ -144,7 +163,7 @@ export async function fetchMonthlyStats(tgId, monthsCount = 6) {
     const rateH = shifts[0]?.rateHour||0
     const rateP = shifts[0]?.ratePack||0
     results.push({
-      month: `${['Січ','Лют','Бер','Квіт','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру'][m]}`,
+      month: ['Січ','Лют','Бер','Квіт','Тра','Чер','Лип','Сер','Вер','Жов','Лис','Гру'][m],
       year: y, monthIdx: m,
       earned: totalHours*rateH + totalPacks*rateP,
       hours: totalHours, packs: totalPacks,
@@ -188,15 +207,12 @@ function parseDP(r) {
   return { id:r.id, tgId:p.num(q['ID']), name:p.text(q['ПІБ']), date:p.date(q['Дата']), amount:p.num(q['Сума виплати']) }
 }
 
-// ── CRUD ───────────────────────────────────────────────────
-
 export async function saveShift({ tgId, name, rateHour, ratePack, date, hours, packs, lunchBreak=1 }) {
-  // Автоматично віднімаємо обід
   const actualHours = Math.max(0, hours - lunchBreak)
   return createPage(DB.shifts, {
     'ПІБ':                       { title:[{ text:{ content:name } }] },
     'ID':                        { number:tgId },
-    'Дата':                      { date:{ start:date } },
+[24.05.2026 0:13] Денис: 'Дата':                      { date:{ start:date } },
     'Години':                    { number:actualHours },
     'Кількість збитих пачок':    { number:packs },
     'Ставка в год.':             { number:rateHour },
@@ -206,8 +222,7 @@ export async function saveShift({ tgId, name, rateHour, ratePack, date, hours, p
   })
 }
 
-// Редагувати зміну
-export async function updateShift(pageId, { hours, packs, rateHour, ratePack, lunchBreak=1 }) {
+export async function updateShift(pageId, { hours, packs, rateHour, ratePack, lunchBreak=0 }) {
   const actualHours = Math.max(0, hours - lunchBreak)
   return updatePage(pageId, {
     'Години':                    { number:actualHours },
@@ -252,11 +267,9 @@ export async function addDebt({ tgId, name, amount }) {
   const existing = await queryDB(DB.debts, { property:'ID', number:{ equals:tgId } })
   if (existing.results?.length) {
     const old = existing.results[0]
-    const oldR = old.properties['Залишок боргу']?.number||0
-    const oldT = old.properties['Сума боргу']?.number||0
     return updatePage(old.id, {
-      'Сума боргу':    { number:oldT+amount },
-      'Залишок боргу': { number:oldR+amount },
+      'Сума боргу':    { number:(old.properties['Сума боргу']?.number||0)+amount },
+      'Залишок боргу': { number:(old.properties['Залишок боргу']?.number||0)+amount },
     })
   }
   return createPage(DB.debts, {
@@ -307,7 +320,7 @@ export async function deleteStaff(pageId) { return archivePage(pageId) }
 
 export async function writeLog({ tgId, name, action, details }) {
   try {
-    await createPage(DB.logs, {
+[24.05.2026 0:13] Денис: await createPage(DB.logs, {
       'Дія':    { title:[{ text:{ content:action } }] },
       'ID':     { number:tgId },
       'ПІБ':    { rich_text:[{ text:{ content:name } }] },
@@ -329,7 +342,6 @@ export async function checkAccess(tgId) {
   return { allowed:true, type:fp?'fixed':'shift', name:p.text(page.properties['ПІБ']), tgId, pageId:page.id }
 }
 
-// ── Розрахунок зарплати ────────────────────────────────────
 function isSat(d) { return new Date(d).getDay()===6 }
 function isSun(d) { return new Date(d).getDay()===0 }
 
@@ -402,11 +414,11 @@ export function calcAllWorkers(data) {
   const shiftWorkers = ids.map(id => ({
     type:'shift', ...calcSalary(id, data),
     name: data.staff.find(s=>s.tgId===id)?.name ||
-          data.shifts.find(s=>s.tgId===id)?.name || `ID ${id}`,
+          data.shifts.find(s=>s.tgId===id)?.name || ID ${id},
   }))
 
   const fixedWorkers = data.fixedStaff.map(w => {
-    const totalAdv = data.advances.filter(a=>a.tgId===w.tgId).reduce((s,a)=>s+a.amount,0)
+[24.05.2026 0:13] Денис: const totalAdv = data.advances.filter(a=>a.tgId===w.tgId).reduce((s,a)=>s+a.amount,0)
     const debtPaid = data.debtPayments.filter(p=>p.tgId===w.tgId).reduce((s,p)=>s+p.amount,0)
     const debtInfo = data.debts.find(d=>d.tgId===w.tgId)
     return {
