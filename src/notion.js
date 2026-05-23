@@ -1,4 +1,4 @@
-[24.05.2026 0:13] Денис: // notion.js v6.1 — з пагінацією
+// notion.js v6.1 — з пагінацією
 
 const DB = {
   shifts:       import.meta.env.VITE_DB_SHIFTS,
